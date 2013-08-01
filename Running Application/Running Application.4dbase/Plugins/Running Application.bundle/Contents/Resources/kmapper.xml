@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<application xmlns="http://www.4d.com/namespace/reserved/FP/Constants">
+   <appid>&quot;0&quot;</appid>
+   <fourdversmin>&quot;9.0.0&quot;</fourdversmin>
+   <fourdversmax>&quot;9.0.0&quot;</fourdversmax>
+   <command name="App TERMINATE" str="20000" topic="2">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App FORCE TERMINATE" str="20000" topic="3">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App Is active" str="20000" topic="4">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App ACTIVATE" str="20000" topic="5">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App Get icon" str="20000" topic="6">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App HIDE" str="20000" topic="7">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App SHOW" str="20000" topic="8">
+      <param position="1" k="20000"/>
+   </command>
+   <command name="App Is hidden" str="20000" topic="9">
+      <param position="1" k="20000"/>
+   </command>
+</application>
