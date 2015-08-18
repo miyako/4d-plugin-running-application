@@ -22,6 +22,7 @@ void App_SHOW(sLONG_PTR *pResult, PackagePtr pParams);
 void App_Is_hidden(sLONG_PTR *pResult, PackagePtr pParams);
 void App_Get_path(sLONG_PTR *pResult, PackagePtr pParams);
 void App_Get_localized_name(sLONG_PTR *pResult, PackagePtr pParams);
+void App_Find_path(sLONG_PTR *pResult, PackagePtr pParams);
 
 #define DEFAULT_ICON_SIZE 1024
 #define APP_CURRENT_APPLICATION @"__CURRENT__"

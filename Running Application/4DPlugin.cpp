@@ -97,11 +97,14 @@ void CommandDispatcher (PA_long32 pProcNum, sLONG_PTR *pResult, PackagePtr pPara
 			App_Get_localized_name(pResult, pParams);
 			break;
 
+		case 12 :
+			App_Find_path(pResult, pParams);
+			break;
+
 	}
 }
 
 // -------------------------------------- App -------------------------------------
-
 
 void App_LIST(sLONG_PTR *pResult, PackagePtr pParams)
 {
@@ -198,6 +201,9 @@ void App_Get_icon(sLONG_PTR *pResult, PackagePtr pParams)
             CGImageDestinationFinalize(destination);
             PA_Picture picture = PA_CreatePicture((void *)CFDataGetBytePtr(data), CFDataGetLength(data));
             *(PA_Picture*) pResult = picture;
+            CFRelease(destination);
+            CFRelease(properties);
+            CFRelease(data);
         }
 	}
 }
@@ -258,7 +264,6 @@ void App_Get_path(sLONG_PTR *pResult, PackagePtr pParams)
             url = [app executableURL];
         
         if(url){
-        
             NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
             if(path){
                 returnValue.setUTF16String(path);
@@ -282,6 +287,31 @@ void App_Get_localized_name(sLONG_PTR *pResult, PackagePtr pParams)
 	if(app){
         returnValue.setUTF16String([app localizedName]);
     }
+
+	returnValue.setReturn(pResult);
+}
+
+void App_Find_path(sLONG_PTR *pResult, PackagePtr pParams)
+{
+	C_TEXT Param1;
+	C_TEXT returnValue;
+
+	Param1.fromParamAtIndex(pParams, 1);
+
+    NSString *bundleIdentifier = Param1.copyUTF16String();
+	NSBundle *b = [NSBundle bundleWithIdentifier:bundleIdentifier];
+    if(b){
+        NSURL *url = [b bundleURL];
+        if(url){
+            NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
+            if(path){
+                returnValue.setUTF16String(path);
+                [path release];
+            }
+        }
+    }
+    
+    [bundleIdentifier release];
 
 	returnValue.setReturn(pResult);
 }
