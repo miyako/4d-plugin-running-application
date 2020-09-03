@@ -1,0 +1,13 @@
+{
+	"themes": [
+		{
+			"theme": "Running Application",
+			"constants": [
+        {
+            "name": "App current application",
+            "value": "__CURRENT__:S"
+        }
+            ]
+        }
+	]
+}
