@@ -102,9 +102,13 @@ void App_LIST(PA_PluginParameters params) {
     
     for(unsigned int i = 0 ; i < [runningApplications count] ; ++i){
         
-        Param1.appendUTF16String([[runningApplications objectAtIndex:i]localizedName]);
-        Param2.appendUTF16String([[runningApplications objectAtIndex:i]bundleIdentifier]);
-        Param3.appendIntValue([[runningApplications objectAtIndex:i]processIdentifier]);
+        NSRunningApplication *runningApplication = [runningApplications objectAtIndex:i];
+        
+        Param1.appendUTF16String([runningApplication localizedName]);
+        Param3.appendIntValue([runningApplication processIdentifier]);
+        
+        NSString *bundleIdentifier = [runningApplication bundleIdentifier];
+        Param2.appendUTF16String(bundleIdentifier ? bundleIdentifier : @"");
     }
     
     Param1.toParamAtIndex(pParams, 1);
