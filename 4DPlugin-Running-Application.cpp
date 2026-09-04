@@ -94,21 +94,25 @@ void App_LIST(PA_PluginParameters params) {
     ARRAY_TEXT Param2;
     ARRAY_LONGINT Param3;
 
-    NSArray *runningApplications = [[NSWorkspace sharedWorkspace]runningApplications];
+    @autoreleasepool {
 
-    Param1.setSize(1);
-    Param2.setSize(1);
-    Param3.setSize(1);
-    
-    for(unsigned int i = 0 ; i < [runningApplications count] ; ++i){
+        NSArray *runningApplications = [[NSWorkspace sharedWorkspace]runningApplications];
+
+        Param1.setSize(0);
+        Param2.setSize(0);
+        Param3.setSize(0);
         
-        NSRunningApplication *runningApplication = [runningApplications objectAtIndex:i];
+        for(unsigned int i = 0 ; i < [runningApplications count] ; ++i){
+            
+            NSRunningApplication *runningApplication = [runningApplications objectAtIndex:i];
+            
+            Param1.appendUTF16String([runningApplication localizedName]);
+            Param3.appendIntValue([runningApplication processIdentifier]);
+            
+            NSString *bundleIdentifier = [runningApplication bundleIdentifier];
+            Param2.appendUTF16String(bundleIdentifier ? bundleIdentifier : @"");
+        }
         
-        Param1.appendUTF16String([runningApplication localizedName]);
-        Param3.appendIntValue([runningApplication processIdentifier]);
-        
-        NSString *bundleIdentifier = [runningApplication bundleIdentifier];
-        Param2.appendUTF16String(bundleIdentifier ? bundleIdentifier : @"");
     }
     
     Param1.toParamAtIndex(pParams, 1);
@@ -125,10 +129,12 @@ void App_TERMINATE(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        [app terminate];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            [app terminate];
+    }
 }
 
 void App_FORCE_TERMINATE(PA_PluginParameters params) {
@@ -140,10 +146,12 @@ void App_FORCE_TERMINATE(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        [app forceTerminate];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            [app forceTerminate];
+    }
 }
 
 void App_Is_active(PA_PluginParameters params) {
@@ -155,11 +163,14 @@ void App_Is_active(PA_PluginParameters params) {
     C_LONGINT returnValue;
 
     Param1.fromParamAtIndex(pParams, 1);
+    returnValue.setIntValue(0);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        returnValue.setIntValue([app isActive]);
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            returnValue.setIntValue([app isActive]);
+    }
             
     returnValue.setReturn(pResult);
 }
@@ -173,10 +184,12 @@ void App_ACTIVATE(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+    }
 }
 
 void App_Get_icon(PA_PluginParameters params) {
@@ -188,23 +201,33 @@ void App_Get_icon(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app){
-        NSImage *icon = [app icon];
-        if(icon){
-            NSRect imageRect = NSMakeRect(0, 0, DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE);
-            CGImageRef image = [icon CGImageForProposedRect:(NSRect *)&imageRect context:NULL hints:NULL];
-            CFMutableDataRef data = CFDataCreateMutable(kCFAllocatorDefault, 0);
-            CGImageDestinationRef destination = CGImageDestinationCreateWithData(data, kUTTypeTIFF, 1, NULL);
-            CFMutableDictionaryRef properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, NULL, NULL);
-            CGImageDestinationAddImage(destination, image, properties);
-            CGImageDestinationFinalize(destination);
-            PA_Picture picture = PA_CreatePicture((void *)CFDataGetBytePtr(data), (PA_long32)CFDataGetLength(data));
-            *(PA_Picture*) pResult = picture;
-            CFRelease(destination);
-            CFRelease(properties);
-            CFRelease(data);
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app){
+            NSImage *icon = [app icon];
+            if(icon){
+                NSRect imageRect = NSMakeRect(0, 0, DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE);
+                CGImageRef image = [icon CGImageForProposedRect:(NSRect *)&imageRect context:NULL hints:NULL];
+                if(image){
+                    CFMutableDataRef data = CFDataCreateMutable(kCFAllocatorDefault, 0);
+                    if(data){
+                        CGImageDestinationRef destination = CGImageDestinationCreateWithData(data, kUTTypeTIFF, 1, NULL);
+                        if(destination){
+                            CFMutableDictionaryRef properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, NULL, NULL);
+                            CGImageDestinationAddImage(destination, image, properties);
+                            if(CGImageDestinationFinalize(destination)){
+                                PA_Picture picture = PA_CreatePicture((void *)CFDataGetBytePtr(data), (PA_long32)CFDataGetLength(data));
+                                *(PA_Picture*) pResult = picture;
+                            }
+                            if(properties)
+                                CFRelease(properties);
+                            CFRelease(destination);
+                        }
+                        CFRelease(data);
+                    }
+                }
+            }
         }
     }
 }
@@ -218,10 +241,12 @@ void App_HIDE(PA_PluginParameters params) {
     
     Param1.fromParamAtIndex(pParams, 1);
     
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        [app hide];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            [app hide];
+    }
 }
 
 void App_SHOW(PA_PluginParameters params) {
@@ -233,10 +258,12 @@ void App_SHOW(PA_PluginParameters params) {
     
     Param1.fromParamAtIndex(pParams, 1);
     
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        [app unhide];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            [app unhide];
+    }
 }
 
 void App_Is_hidden(PA_PluginParameters params) {
@@ -248,11 +275,14 @@ void App_Is_hidden(PA_PluginParameters params) {
     C_LONGINT returnValue;
     
     Param1.fromParamAtIndex(pParams, 1);
+    returnValue.setIntValue(0);
     
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app)
-        returnValue.setIntValue([app isHidden]);
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app)
+            returnValue.setIntValue([app isHidden]);
+    }
     
     returnValue.setReturn(pResult);
 }
@@ -267,18 +297,20 @@ void App_Get_path(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app){
-        NSURL *url = [app bundleURL];
-        if(!url)
-            url = [app executableURL];
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
         
-        if(url){
-            NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
-            if(path){
-                returnValue.setUTF16String(path);
-                [path release];
+        if(app){
+            NSURL *url = [app bundleURL];
+            if(!url)
+                url = [app executableURL];
+            
+            if(url){
+                NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
+                if(path){
+                    returnValue.setUTF16String(path);
+                    [path release];
+                }
             }
         }
     }
@@ -296,10 +328,12 @@ void App_Get_localized_name(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSRunningApplication *app = _getApp(Param1);
-    
-    if(app){
-        returnValue.setUTF16String([app localizedName]);
+    @autoreleasepool {
+        NSRunningApplication *app = _getApp(Param1);
+        
+        if(app){
+            returnValue.setUTF16String([app localizedName]);
+        }
     }
 
     returnValue.setReturn(pResult);
@@ -315,20 +349,22 @@ void App_Find_path(PA_PluginParameters params) {
 
     Param1.fromParamAtIndex(pParams, 1);
 
-    NSString *bundleIdentifier = Param1.copyUTF16String();
-    NSBundle *b = [NSBundle bundleWithIdentifier:bundleIdentifier];
-    if(b){
-        NSURL *url = [b bundleURL];
-        if(url){
-            NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
-            if(path){
-                returnValue.setUTF16String(path);
-                [path release];
+    @autoreleasepool {
+        NSString *bundleIdentifier = Param1.copyUTF16String();
+        NSBundle *b = [NSBundle bundleWithIdentifier:bundleIdentifier];
+        if(b){
+            NSURL *url = [b bundleURL];
+            if(url){
+                NSString *path = (NSString *)CFURLCopyFileSystemPath((CFURLRef)url, kCFURLHFSPathStyle);
+                if(path){
+                    returnValue.setUTF16String(path);
+                    [path release];
+                }
             }
         }
+        
+        [bundleIdentifier release];
     }
-    
-    [bundleIdentifier release];
 
     returnValue.setReturn(pResult);
 }
