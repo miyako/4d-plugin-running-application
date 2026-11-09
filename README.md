@@ -32,6 +32,80 @@ Every command that targets a specific application addresses it by **bundle ident
 
 ---
 
+## Manual maintenance and publication
+
+The two release-related Actions are independent:
+
+| Action | Manual controls | Effect |
+|---|---|---|
+| **Bump** | Built-in branch selector and one required `mode` choice (`patch`, `minor`, `major`; default `patch`) | Commits source versions to that selected branch. Never builds, tags, releases, or dispatches another workflow. |
+| **Build** | Built-in ref selector only; no custom inputs | Builds the immutable selected event SHA and publishes its existing source version. Never increments or commits source. |
+
+Neither action runs on a branch push, pull request, or tag push. Build has no
+default-branch restriction, matching the original publication policy. Publication
+uses one repository-wide concurrency group across refs with cancellation disabled;
+this is mutual exclusion, **not** a FIFO queue guarantee.
+
+The source authority is the original Bump header's coordinated
+`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` / plist policy (introduced in
+`ae116452e329fcddbd329feed11e27a980bec1c7`), not its buggy marketing-only body.
+The migration keeps **2.1.6**, repairing only six stale source
+`CURRENT_PROJECT_VERSION` values and the two copied-source English localization
+tokens from 2.1.2. It does not increment the version or rewrite prebuilt bundle
+metadata. `Info.plist` keeps `$(MARKETING_VERSION)` and its absent
+`CFBundleVersion`; a missing **short** version is always an error.
+Because `v2.1.6` is already published, Build initially refuses to republish it.
+Run Bump on the desired branch before selecting its resulting commit in Build.
+
+Version helpers reject noncanonical `X.Y.Z` (including leading zeros and suffixes),
+drift, duplicates, unknown references and cycles before writing. Bumps preserve
+supported source encodings, BOMs, individual line endings, file modes, build
+references, and unrelated bytes. The executable pre-push guard requires exactly
+one advertised branch update from the selected old SHA to literal `HEAD`, with a
+single direct-parent source-only commit. A moved, deleted, rewound, or already
+updated branch fails closed. Both Git follow-tags controls are disabled.
+
+Build retains the original **macOS-only** `Default` target, universal
+`arm64 x86_64`, deployment override `11.0`, Cocoa dependency, hardened-runtime
+signing, notarization, stapling, ZIP and DMG packaging. The checked-in Windows
+binaries, QuickLook thumbnail, constants, manifest and other resources remain
+inputs, not newly invented build jobs. The canonical configuration build directory
+is the actual `test/Plugins` package root. Cleanup removes only generated Mac
+executable/plist/copied localization/signature and target intermediates, never the
+whole bundle or its prebuilt resources.
+
+Publication checks authenticated, drafts-inclusive release pages and the exact
+remote version tag **before native work** and again **after** signing,
+notarization and stapling. Initial checkout validation requires a globally clean
+immutable input. Final validation permits the exact generated tracked outputs
+without resetting their bytes, but verifies all nongenerated tracked inputs
+against the selected commit in both index and worktree (including hidden-index
+flags). Built XML/binary plist and copied localization must agree with source.
+
+The publisher creates a new `vX.Y.Z` tag at the selected SHA, then a separate new
+nondraft/nonprerelease release, then uploads assets only to that returned release
+ID. The original empty-notes policy is retained: empty body, no generated release
+notes. Existing tags/releases are never reused or modified, even at the same SHA.
+There is no update, overwrite, deletion, automatic rollback, or retry.
+**If any publication step fails, partial tags/releases/assets are retained.**
+Inspect the reported remote state and resolve it manually before another attempt;
+rerunning cannot silently repair or replace an existing publication.
+
+Offline maintenance checks (no native, signing, notarization, secrets, or 4D):
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .github/scripts/tests -v
+actionlint .github/workflows/*.yml
+```
+
+The suite executes the actual helpers against disposable Git repositories and a
+fake GitHub API, and executes native Bash steps with closed-PATH command stubs.
+History assertions use immutable intake commit
+`fbc46b8e8d3c2ab8c412bea637172643bc6b4a3c`; current version expectations are
+source-derived so the same suite can run after a real source bump.
+
+---
+
 ## Requirements & platform notes
 
 - **macOS only.** Every command is built on AppKit/Cocoa (`NSWorkspace`, `NSRunningApplication`, `NSBundle`); there's no Windows counterpart.
