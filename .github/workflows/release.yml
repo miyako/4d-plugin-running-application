@@ -1,60 +1,39 @@
-# Builds the plugin for Windows (x64) first, then macOS as a universal
-# (arm64 + x86_64) binary, merges both into the single cross-platform
-# .bundle, codesigns + notarizes the mac binary, and publishes a GitHub
-# Release with the zip and dmg attached.
-#
-# Trigger: push a tag matching v*.*.* (either by hand, or via bump-version.yml).
-# You can also run it manually against an existing tag with workflow_dispatch.
-
-name: Build & Release
+# Build the native macOS slice in the existing cross-platform bundle.
+# Windows prebuilts and bundle resources are preserved, not rebuilt.
+name: Build
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing tag to build (e.g. v2.3.0)
-        required: true
 
 permissions:
   contents: write
 
 env:
-  # ---- edit these per-project, everything else is generic ----
   PRODUCT_NAME: Running Application
   XCODE_PROJECT: Running Application.xcodeproj
-  VCX_SOLUTION: Running Application.sln
   MACOS_DEPLOYMENT_TARGET: '11.0'
-  # --------------------------------------------------------------
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-publication
   cancel-in-progress: false
 
 jobs:
-
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.set.outputs.tag }}
-      version: ${{ steps.set.outputs.version }}
-    steps:
-      - id: set
-        run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-
   build-macos:
     name: Build macOS, package, sign, notarize & release
-    needs: [version]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.version.outputs.tag }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: preflight
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/release.py preflight --sha "$GITHUB_SHA"
 
       - name: import Developer ID certificate
         env:
@@ -83,29 +62,89 @@ jobs:
           TEAM_ID: ${{ secrets.NOTARYTOOL_TEAM_ID }}
           APP_PASSWORD: ${{ secrets.NOTARYTOOL_PASSWORD }}
         run: |
+          set -euo pipefail
           xcrun notarytool store-credentials "notarytool-profile" \
             --apple-id "$APPLE_ID" \
             --team-id "$TEAM_ID" \
             --password "$APP_PASSWORD" \
             --keychain "$KEYCHAIN_PATH"
 
+      - name: remove generated macOS outputs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          product = os.environ["PRODUCT_NAME"]
+          selected = []
+
+          def select_generated(parent, parts, directory=False):
+              if parent.is_symlink():
+                  raise RuntimeError(f"Refusing symlink directory: {parent}")
+              if not parent.exists():
+                  return
+              for path in parent.iterdir():
+                  if path.name.casefold() != parts[0].casefold():
+                      continue
+                  if len(parts) > 1:
+                      select_generated(path, parts[1:], directory)
+                  else:
+                      selected.append((path, directory))
+
+          # Validate every ancestor before deleting anything, including stale Default outputs.
+          for prefix in (
+              ("test", "Plugins", product + ".bundle"),
+              ("test", "Plugins", "Default", product + ".bundle"),
+          ):
+              for parts in (
+                  ("Contents", "MacOS", product),
+                  ("Contents", "Info.plist"),
+                  ("Contents", "Resources", "English.lproj", "InfoPlist.strings"),
+              ):
+                  select_generated(root, prefix + parts)
+              select_generated(root, prefix + ("Contents", "_CodeSignature"), directory=True)
+          select_generated(root, (
+              "build", product + ".build", "Default", product + ".build",
+          ), directory=True)
+          for path, directory in selected:
+              if directory and not path.is_symlink():
+                  shutil.rmtree(path)
+              else:
+                  path.unlink()
+          PY
+
       - name: build macOS plugin (universal)
         run: |
-          xcodebuild -project "${{ env.XCODE_PROJECT }}" \
-            -target "${{ env.PRODUCT_NAME }}" \
+          set -euo pipefail
+          xcodebuild -project "$XCODE_PROJECT" \
+            -target "$PRODUCT_NAME" \
             -configuration Default \
+            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/test/Plugins" \
+            OBJROOT="$GITHUB_WORKSPACE/build" \
             ARCHS="arm64 x86_64" \
             ONLY_ACTIVE_ARCH=NO \
-            MACOSX_DEPLOYMENT_TARGET="${{ env.MACOS_DEPLOYMENT_TARGET }}" \
+            MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
             build
 
       - name: verify universal binary
         run: |
           set -euo pipefail
-          BUNDLE_PATH="test/Plugins/${{ env.PRODUCT_NAME }}.bundle"
-          BIN="$BUNDLE_PATH/Contents/MacOS/${{ env.PRODUCT_NAME }}"
-          lipo -info "$BIN"
-          lipo -info "$BIN" | grep -q "arm64" && lipo -info "$BIN" | grep -q "x86_64"
+          BUNDLE_PATH="test/Plugins/${PRODUCT_NAME}.bundle"
+          BIN="$BUNDLE_PATH/Contents/MacOS/$PRODUCT_NAME"
+          ARCHITECTURES=$(lipo -archs "$BIN")
+          for REQUIRED_ARCH in arm64 x86_64; do
+            FOUND=false
+            for ARCH in $ARCHITECTURES; do
+              if [ "$ARCH" = "$REQUIRED_ARCH" ]; then FOUND=true; fi
+            done
+            if [ "$FOUND" != true ]; then
+              echo "Missing architecture: $REQUIRED_ARCH" >&2
+              exit 1
+            fi
+          done
           echo "BUNDLE_PATH=$BUNDLE_PATH" >> "$GITHUB_ENV"
 
       - name: codesign
@@ -113,36 +152,39 @@ jobs:
           set -euo pipefail
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
             | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          test -n "$IDENTITY"
           echo "Signing with: $IDENTITY"
           codesign --verbose --deep --timestamp --force --options=runtime \
             --sign "$IDENTITY" "$BUNDLE_PATH"
           codesign --verify --deep --strict --verbose=2 "$BUNDLE_PATH"
 
       - name: package, notarize & staple
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.version.outputs.version }}"
-          ZIP_PATH="${{ env.PRODUCT_NAME }}-${VERSION}.zip"
-          DMG_PATH="${{ env.PRODUCT_NAME }}-${VERSION}.dmg"
+          ZIP_PATH="${PRODUCT_NAME}-${VERSION}.zip"
+          DMG_PATH="${PRODUCT_NAME}-${VERSION}.dmg"
 
-          # zip: cross-platform bundle (win + mac binaries together), what most users grab
           ditto -c -k --keepParent "$BUNDLE_PATH" "$ZIP_PATH"
+          hdiutil create -format UDBZ -volname "$PRODUCT_NAME" -srcfolder "$BUNDLE_PATH" "$DMG_PATH"
 
-          # dmg: mac-friendly, and the only format Apple lets us staple a ticket to
-          hdiutil create -format UDBZ -volname "${{ env.PRODUCT_NAME }}" -srcfolder "$BUNDLE_PATH" "$DMG_PATH"
-
-          xcrun notarytool submit "$ZIP_PATH" --keychain-profile "notarytool-profile" --keychain "$KEYCHAIN_PATH" --wait
-          xcrun notarytool submit "$DMG_PATH" --keychain-profile "notarytool-profile" --keychain "$KEYCHAIN_PATH" --wait
+          for ARTIFACT in "$ZIP_PATH" "$DMG_PATH"; do
+            xcrun notarytool submit "$ARTIFACT" \
+              --keychain-profile "notarytool-profile" --keychain "$KEYCHAIN_PATH" \
+              --wait --output-format json \
+              | python3 -c 'import json, sys; result = json.load(sys.stdin); sys.exit(0 if result.get("status") == "Accepted" else 1)'
+          done
           xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          codesign --verify --deep --strict --verbose=2 "$BUNDLE_PATH"
 
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
 
       - name: create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: ${{ needs.version.outputs.tag }}
-          files: |
-            ${{ env.ZIP_PATH }}
-            ${{ env.DMG_PATH }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/release.py publish --sha "$GITHUB_SHA" --zip "$ZIP_PATH" --dmg "$DMG_PATH"

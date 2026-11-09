@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Reject any advertisement other than the one approved source bump."""
+
+import os
+import subprocess
+import sys
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def main():
+    old, new, ref = (os.environ[key] for key in ("BUMP_OLD", "BUMP_NEW", "BUMP_REF"))
+    updates = [line.split() for line in sys.stdin if line.strip()]
+    if updates != [["HEAD", new, ref, old]]:
+        raise ValueError(f"Unexpected pre-push advertisement: {updates!r}")
+    if old == new or git("rev-parse", "HEAD") != new:
+        raise ValueError("Expected a new literal HEAD")
+    if git("rev-list", "--parents", "-n", "1", new).split() != [new, old]:
+        raise ValueError("Expected exactly one direct parent at the selected SHA")
+
+
+try:
+    main()
+except (KeyError, ValueError, subprocess.CalledProcessError) as error:
+    sys.exit(f"Source bump push rejected: {error}")
