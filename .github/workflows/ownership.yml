@@ -1,0 +1,30 @@
+name: Ownership
+
+on:
+  push:
+    branches:
+      - master
+      - miyako-running-application-ownership
+    paths:
+      - '4D Plugin API/**'
+      - '4DPlugin-Running-Application.*'
+      - 'support/**'
+      - '.github/tests/**'
+      - '.github/workflows/ownership.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ownership:
+    name: Offline ownership (ASan + UBSan)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fixed actual sources and complete bundled SDK
+        run: python3 .github/tests/test_ownership.py
+      - name: Same harness against immutable baseline
+        run: python3 .github/tests/test_ownership.py --baseline
