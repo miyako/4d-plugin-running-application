@@ -34,6 +34,11 @@ Every command that targets a specific application addresses it by **bundle ident
 
 ## Manual maintenance and publication
 
+The unsigned, offline [native ownership regression](docs/ownership.md) compiles
+the actual dispatcher, wrappers and complete bundled SDK against synthetic
+application fixtures. Its separate **Ownership** push workflow does not build
+or publish a plugin bundle.
+
 The two release-related Actions are independent:
 
 | Action | Manual controls | Effect |
